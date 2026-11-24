@@ -1,6 +1,6 @@
 {
-  "name": "교통 길잡이 지도",
-  "short_name": "J service",
+  "name": "J-service",
+  "short_name": "J-service",
   "lang": "ko",
   "start_url": "./",
   "scope": "./",
