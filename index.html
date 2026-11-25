@@ -99,6 +99,7 @@ html.op-wait .intro { opacity: 0; }
 
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
 
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" media="print" onload="this.media='all'" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.css'">
 <style>
@@ -2610,6 +2611,13 @@ html[lang="ja"] #rko { display: none; }
     logoIn(lg, 240);
     p2.animate(grow, { duration: T1, easing: CURT, fill: "both", delay: 90 }).onfinish = function () {
       swap(); window.scrollTo(0, 0);
+      /* 지역 지도가 종이 뒤에서 다 그려질 때까지 기다렸다가 걷음 (window.jsvFxHold는 지도 스크립트가 제공).
+         기다리는 동안 로고가 살짝 숨 쉬듯 움직여서 멈춘 것처럼 보이지 않게 함 */
+      var breath = null, bt = setTimeout(function () {
+        try { breath = lg.animate([{ scale: "1" }, { scale: "1.06" }, { scale: "1" }], { duration: 1100, iterations: Infinity, easing: "ease-in-out" }); } catch (e) {}
+      }, 250);
+      var hold = window.jsvFxHold || function (cb) { cb(); };
+      hold(function () { clearTimeout(bt); if (breath) breath.cancel();
       requestAnimationFrame(function () {
         f1.className = "fx-fold f2";
         p1.style.transformOrigin = p2.style.transformOrigin = "100% 50%";  /* 오른쪽으로 접으며 걷힘 */
@@ -2618,6 +2626,7 @@ html[lang="ja"] #rko { display: none; }
         p2.animate(shrink, { duration: T2, easing: CURT, fill: "both" });
         fold(f1, -52, W - 52, T2, 0);
         p1.animate(shrink, { duration: T2, easing: CURT, fill: "both", delay: 90 }).onfinish = function () { p1.remove(); p2.remove(); f1.remove(); lg.remove(); done(); };
+      });
       });
     };
   }
@@ -2670,7 +2679,7 @@ html[lang="ja"] #rko { display: none; }
       busy = true; root.classList.add("fx");
       var my = ++fxTok;   /* 이번 전환 번호: 지난 전환의 3.5초 안전 타이머가 이번 전환을 끝내 버리지 않게 */
       var done = function () { if (!busy || my !== fxTok) return; busy = false; root.classList.remove("fx"); try { window.dispatchEvent(new Event("jsv:fxdone")); } catch (e) {} };   /* 전환이 끝났음을 알림(지역 지도는 이때 켬) */
-      setTimeout(done, 3500); /* 혹시 멈춰도 3.5초 뒤에는 풀림 */
+      setTimeout(done, 6000); /* 혹시 멈춰도 6초 뒤에는 풀림 (지도 기다림 최대 3초 포함) */
       if (kind === "curtain") curtain(swap, done); else if (kind === "paper") paper(swap, done); else circle(x, y, color, swap, done);
     }
   };
@@ -4865,6 +4874,9 @@ window.JSV_POSE = {};   /* 탭 안 마스코트 표정 그림 — 뺐음 */
   };
   var lvb = "127.0,35.5,134.5,29.5"; /* 검색 우선 범위(서,북,동,남) - 도시별로 initLive에서 갱신 */
   var STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+  /* 메인화면에서 쉬는 동안 지도 스타일을 미리 받아 둠 → 지역에 들어갈 때 지도가 더 빨리 그려짐 */
+  (function () { var pre = function () { try { fetch(STYLE_URL, { mode: "cors" }).catch(function () {}); } catch (e) {} };
+    if (window.requestIdleCallback) requestIdleCallback(pre, { timeout: 4000 }); else setTimeout(pre, 2500); })();
   var RASTER = { version: 8, sources: { osm: { type: "raster", tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize: 256, maxzoom: 19, attribution: "© OpenStreetMap contributors" } }, layers: [{ id: "osm", type: "raster", source: "osm" }] };
   var OVP = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
   var QUICK_FUKUOKA = [["하카타역", 33.5897, 130.4207, 15], ["텐진", 33.5912, 130.3992, 15], ["후쿠오카 공항", 33.5859, 130.4507, 15], ["하카타항(부산 페리)", 33.6045, 130.4015, 15], ["다자이후", 33.5215, 130.5348, 15], ["고쿠라", 33.8862, 130.8826, 15], ["야나가와", 33.1637, 130.4054, 15]];
@@ -5629,7 +5641,13 @@ window.JSV_POSE = {};   /* 탭 안 마스코트 표정 그림 — 뺐음 */
     var t = setTimeout(once, 4000);   /* 혹시 알림이 안 와도 4초 뒤에는 켬 */
     window.addEventListener("jsv:fxdone", once);
   }
+  /* 종이 전환이 지도를 기다리게 하는 장치: holdStart() → 지도가 다 그려지면 holdEnd() (최대 3초) */
+  var holdCbs = null, holdT = 0;
+  window.jsvFxHold = function (cb) { if (!holdCbs) { cb(); return; } holdCbs.push(cb); };
+  function holdStart() { holdEnd(); holdCbs = []; holdT = setTimeout(holdEnd, 3000); }
+  function holdEnd() { clearTimeout(holdT); var c = holdCbs; holdCbs = null; if (c) c.forEach(function (f) { try { f(); } catch (e) {} }); }
   function liveDestroy() {
+    holdEnd();
     liveTok++;
     myLocStop();
     toiletFit = false;
@@ -6432,11 +6450,17 @@ window.JSV_POSE = {};   /* 탭 안 마스코트 표정 그림 — 뺐음 */
     $("#home").hidden = true; $("#region").hidden = false;
     $("#region").classList.remove("enter"); void $("#region").offsetWidth; $("#region").classList.add("enter");
     if (live) {
-      /* 장소 목록·설명 데이터는 바로 넣고, 실제 지도(MapLibre)는 화면 전환 애니메이션이 끝난 직후에 켬.
-         종이가 걷히는 동안 지도를 만들고 그리면 그 작업 때문에 전환이 한 번씩 멈칫했음 */
+      /* 종이가 화면을 다 덮은 지금 지도를 만들고, 지도가 다 그려질 때까지(최대 3초) 종이를 붙잡아 둠.
+         → 종이가 걷히면 지도가 이미 그려져 있음. 무거운 지도 준비 작업은 종이에 가려져서 전환이 멈칫해 보이지 않음 */
       seedTouch(); seedManual(); seedToiletCsv();
-      var tok = liveTok;
-      afterFx(function () { if (tok === liveTok && cur && cur.id === id && !lmap && $("#lmap") && !$("#region").hidden) initLive(live); });
+      if (document.documentElement.classList.contains("fx")) {
+        holdStart();
+        initLive(live);
+        if (lmap) lmap.once("idle", holdEnd); else holdEnd();
+      } else {
+        var tok = liveTok;
+        afterFx(function () { if (tok === liveTok && cur && cur.id === id && !lmap && $("#lmap") && !$("#region").hidden) initLive(live); });
+      }
     }
     setTab("x");
     window.scrollTo(0, 0);
